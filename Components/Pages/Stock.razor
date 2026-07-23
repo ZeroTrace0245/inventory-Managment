@@ -1,0 +1,263 @@
+@page "/stock"
+@rendermode InteractiveServer
+@inject InventoryStore Inventory
+@inject AppSessionStore Session
+@inject NavigationManager Navigation
+
+<PageTitle>Stock</PageTitle>
+
+<div class="inventory-page">
+	<div class="hero-panel hero-panel-sm">
+		<div>
+			<p class="section-label text-white-50">Stock control</p>
+			<h1>Stock movement</h1>
+			<p class="mb-0">Receive deliveries, record sales, and keep stock levels accurate.</p>
+		</div>
+		<a class="btn btn-light" href="products">Back to products</a>
+	</div>
+
+	@if (!string.IsNullOrWhiteSpace(_message))
+	{
+		<div class="alert alert-success">@_message</div>
+	}
+
+	<div class="row g-4">
+		<div class="col-lg-5">
+			<section class="card app-card h-100">
+				<div class="card-body">
+					<p class="section-label">Adjust stock</p>
+					<h2 class="section-title">In / out movement</h2>
+
+					<EditForm Model="_movement" OnValidSubmit="ApplyMovement">
+						<DataAnnotationsValidator />
+						<ValidationSummary />
+
+						<div class="mb-3">
+							<label class="form-label">Product</label>
+							<InputSelect class="form-select" @bind-Value="_movement.ProductId">
+								@foreach (var product in _products)
+								{
+									<option value="@product.Id">@product.Name (@product.QuantityOnHand @product.Unit)</option>
+								}
+							</InputSelect>
+						</div>
+
+						<div class="row g-3">
+							<div class="col-md-6">
+								<label class="form-label">Movement type</label>
+								<InputSelect class="form-select" @bind-Value="_movement.Direction">
+									<option value="@StockDirection.In">Stock in</option>
+									<option value="@StockDirection.Out">Stock out</option>
+								</InputSelect>
+							</div>
+							<div class="col-md-6">
+								<label class="form-label">Quantity</label>
+								<InputNumber class="form-control" @bind-Value="_movement.Quantity" />
+							</div>
+						</div>
+
+						<div class="mb-3 mt-3">
+							<label class="form-label">Reason</label>
+							<InputText class="form-control" @bind-Value="_movement.Reason" />
+						</div>
+
+						<div class="mb-3">
+							<label class="form-label">Notes</label>
+							<InputTextArea class="form-control" rows="4" @bind-Value="_movement.Notes" />
+						</div>
+
+						<button class="btn btn-primary w-100" type="submit">Apply movement</button>
+					</EditForm>
+				</div>
+			</section>
+		</div>
+
+		<div class="col-lg-7">
+			<section class="card app-card h-100">
+				<div class="card-body">
+					<div class="d-flex align-items-start justify-content-between mb-3">
+						<div>
+							<p class="section-label">History</p>
+							<h2 class="section-title">Recent movements</h2>
+						</div>
+						<span class="badge text-bg-light">@_movements.Count entries</span>
+					</div>
+
+					<div class="table-responsive">
+						<table class="table align-middle">
+							<thead>
+								<tr>
+									<th>Time</th>
+									<th>Product</th>
+									<th>Reason</th>
+									<th class="text-end">Change</th>
+									<th>Notes</th>
+								</tr>
+							</thead>
+							<tbody>
+								@foreach (var movement in _movements)
+								{
+									<tr>
+										<td>
+											<div class="fw-semibold">@movement.OccurredAt.LocalDateTime.ToString("g")</div>
+										</td>
+										<td>@movement.ProductName</td>
+										<td>@movement.Reason</td>
+										<td class="text-end">
+											<span class="movement-@((movement.QuantityChange >= 0) ? "positive" : "negative")">
+												@movement.QuantityChange
+											</span>
+										</td>
+										<td>@movement.Notes</td>
+									</tr>
+								}
+							</tbody>
+						</table>
+					</div>
+				</div>
+			</section>
+		</div>
+	</div>
+
+	<div class="row g-4 mt-0">
+		<div class="col-12">
+			<section class="card app-card">
+				<div class="card-body">
+					<p class="section-label">Alerts</p>
+					<h2 class="section-title">Items to review</h2>
+
+					<div class="table-responsive mt-3">
+						<table class="table align-middle">
+							<thead>
+								<tr>
+									<th>Product</th>
+									<th>Stock</th>
+									<th>Status</th>
+									<th>Expiry</th>
+								</tr>
+							</thead>
+							<tbody>
+								@foreach (var product in _alerts)
+								{
+									<tr>
+										<td class="fw-semibold">@product.Name</td>
+										<td>@product.QuantityOnHand @product.Unit</td>
+										<td>
+											@if (product.IsOutOfStock)
+											{
+												<span class="status-pill status-danger">Out of stock</span>
+											}
+											else if (product.IsLowStock)
+											{
+												<span class="status-pill status-warn">Low stock</span>
+											}
+											else
+											{
+												<span class="status-pill status-ok">Expiring soon</span>
+											}
+										</td>
+										<td>@(product.ExpiryDate?.ToString("d") ?? "-")</td>
+									</tr>
+								}
+							</tbody>
+						</table>
+					</div>
+				</div>
+			</section>
+		</div>
+	</div>
+</div>
+
+@code {
+	private readonly List<ProductOverview> _products = new();
+	private List<StockMovementDetail> _movements = new();
+	private List<ProductOverview> _alerts = new();
+	private StockMovementForm _movement = new();
+	private string? _message;
+
+	protected override void OnInitialized()
+	{
+		if (!Session.IsAuthenticated)
+		{
+			Navigation.NavigateTo("/login", forceLoad: false);
+			return;
+		}
+		ReloadData();
+	}
+
+	private void ReloadData()
+	{
+		_products.Clear();
+		_products.AddRange(Inventory.GetProductOverviews().OrderBy(product => product.Name));
+
+		if (_movement.ProductId == 0 && _products.Count > 0)
+		{
+			_movement.ProductId = _products[0].Id;
+		}
+
+		_movements = Inventory.GetRecentMovementDetails(10).ToList();
+		_alerts = _products.Where(product => product.IsOutOfStock || product.IsLowStock || IsExpiringSoon(product)).ToList();
+	}
+
+	private void ApplyMovement()
+	{
+		try
+		{
+			var change = _movement.Direction == StockDirection.In ? _movement.Quantity : -_movement.Quantity;
+			var reason = string.IsNullOrWhiteSpace(_movement.Reason)
+				? (_movement.Direction == StockDirection.In ? "Stock in" : "Stock out")
+				: _movement.Reason;
+
+			Inventory.AdjustStock(_movement.ProductId, change, reason, _movement.Notes);
+			_message = "Stock movement saved.";
+			_movement = CreateDefaultMovement();
+			ReloadData();
+		}
+		catch (Exception ex)
+		{
+			_message = ex.Message;
+		}
+	}
+
+	private static bool IsExpiringSoon(ProductOverview product)
+	{
+		if (!product.ExpiryDate.HasValue)
+		{
+			return false;
+		}
+
+		var limit = DateOnly.FromDateTime(DateTime.Today.AddDays(5));
+		return product.ExpiryDate.Value <= limit;
+	}
+
+	private StockMovementForm CreateDefaultMovement() => new()
+	{
+		Quantity = 1,
+		Direction = StockDirection.In,
+		ProductId = _products.FirstOrDefault()?.Id ?? 0,
+		Reason = "Stock in"
+	};
+
+	private sealed class StockMovementForm
+	{
+		[Range(1, int.MaxValue, ErrorMessage = "Choose a product.")]
+		public int ProductId { get; set; }
+
+		[Range(1, 100000)]
+		public int Quantity { get; set; } = 1;
+
+		public StockDirection Direction { get; set; } = StockDirection.In;
+
+		[Required, StringLength(120)]
+		public string Reason { get; set; } = "Stock in";
+
+		[StringLength(300)]
+		public string Notes { get; set; } = string.Empty;
+	}
+
+	private enum StockDirection
+	{
+		In,
+		Out
+	}
+}

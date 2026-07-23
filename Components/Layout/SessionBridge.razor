@@ -1,0 +1,48 @@
+@inject AppSessionStore Session
+@inject AppSessionStorage Storage
+@implements IDisposable
+
+@code {
+	private bool _loaded;
+
+	protected override async Task OnAfterRenderAsync(bool firstRender)
+	{
+		if (!firstRender)
+		{
+			return;
+		}
+
+		var snapshot = await Storage.LoadAsync();
+		if (snapshot is not null)
+		{
+			Session.Restore(snapshot.UserId);
+		}
+
+		Session.Changed += HandleSessionChanged;
+		_loaded = true;
+	}
+
+	private void HandleSessionChanged()
+	{
+		if (!_loaded)
+		{
+			return;
+		}
+
+		_ = InvokeAsync(async () =>
+		{
+			if (Session.CurrentUser is null)
+			{
+				await Storage.ClearAsync();
+				return;
+			}
+
+			await Storage.SaveAsync(new AppSessionSnapshot(Session.CurrentUser.Id));
+		});
+	}
+
+	public void Dispose()
+	{
+		Session.Changed -= HandleSessionChanged;
+	}
+}

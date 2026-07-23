@@ -1,0 +1,154 @@
+@page "/settings"
+@rendermode InteractiveServer
+@inject AppPreferencesStore Preferences
+@inject AppSessionStore Session
+@inject NavigationManager Navigation
+
+<PageTitle>Settings</PageTitle>
+
+<div class="inventory-page">
+	<div class="hero-panel hero-panel-sm">
+		<div>
+			<p class="section-label text-white-50">Application settings</p>
+			<h1>Settings</h1>
+			<p class="mb-0">Update the login name, theme, and GitHub Models token for this device.</p>
+		</div>
+		<div class="hero-actions">
+			<span class="topbar-pill">Local browser storage</span>
+		</div>
+	</div>
+
+	@if (!string.IsNullOrWhiteSpace(_message))
+	{
+		<div class="alert alert-success">@_message</div>
+	}
+
+	<div class="row g-4">
+		<div class="col-lg-7">
+			<section class="card app-card h-100">
+				<div class="card-body">
+					<p class="section-label">Profile &amp; theme</p>
+					<h2 class="section-title">Appearance and login user</h2>
+
+					<EditForm Model="_model" OnValidSubmit="SaveSettings">
+						<DataAnnotationsValidator />
+						<ValidationSummary />
+
+						<div class="mb-3 mt-4">
+							<label class="form-label">Display name</label>
+							<InputText class="form-control" @bind-Value="_model.DisplayName" />
+						</div>
+
+						<div class="mb-3">
+							<label class="form-label">Theme</label>
+							<InputSelect class="form-select" @bind-Value="_model.Theme">
+								@foreach (var theme in Enum.GetValues<AppTheme>())
+								{
+									<option value="@theme">@GetThemeLabel(theme)</option>
+								}
+							</InputSelect>
+						</div>
+
+						<div class="mb-3">
+							<label class="form-label">GitHub Models token</label>
+							<InputText class="form-control" type="password" autocomplete="off" placeholder="Paste your token here" @bind-Value="_model.GitHubModelsToken" />
+							<div class="form-text">Stored only in local browser storage on this device.</div>
+						</div>
+
+						<div class="d-flex gap-2 flex-wrap mt-4">
+							<button class="btn btn-primary" type="submit">Save settings</button>
+							<button class="btn btn-outline-secondary" type="button" @onclick="ResetToDefaults">Reset</button>
+						</div>
+					</EditForm>
+				</div>
+			</section>
+		</div>
+
+		<div class="col-lg-5">
+			<section class="card app-card h-100">
+				<div class="card-body">
+					<p class="section-label">Current device</p>
+					<h2 class="section-title">Stored preferences</h2>
+
+					<div class="d-flex flex-column gap-3 mt-4">
+						<div class="metric-card shadow-none border">
+							<div class="metric-label">Active login user</div>
+							<div class="metric-value">@Preferences.DisplayName</div>
+						</div>
+
+						<div class="metric-card shadow-none border">
+							<div class="metric-label">Theme</div>
+							<div class="metric-value">@GetThemeLabel(Preferences.Theme)</div>
+						</div>
+
+						<div class="metric-card shadow-none border">
+							<div class="metric-label">GitHub Models token</div>
+							<div class="metric-value">@(Preferences.HasToken ? "Configured" : "Not set")</div>
+						</div>
+					</div>
+
+					<div class="alert alert-info mt-4 mb-0">
+						The token is never displayed after saving. Open the AI assistant to use it.
+					</div>
+				</div>
+			</section>
+		</div>
+	</div>
+</div>
+
+@code {
+	private SettingsFormModel _model = new();
+	private string? _message;
+
+	protected override void OnInitialized()
+	{
+		if (!Session.IsAuthenticated)
+		{
+			Navigation.NavigateTo("/login", forceLoad: false);
+			return;
+		}
+		LoadFromPreferences();
+	}
+
+	private void LoadFromPreferences()
+	{
+		var current = Preferences.Current;
+		_model = new SettingsFormModel
+		{
+			DisplayName = current.DisplayName,
+			Theme = current.Theme,
+			GitHubModelsToken = current.GitHubModelsToken
+		};
+	}
+
+	private void SaveSettings()
+	{
+		Preferences.SetPreferences(new AppPreferences(_model.DisplayName, _model.Theme, _model.GitHubModelsToken));
+		_message = "Settings saved.";
+	}
+
+	private void ResetToDefaults()
+	{
+		Preferences.SetPreferences(new AppPreferences("Shop Admin", AppTheme.System, string.Empty));
+		LoadFromPreferences();
+		_message = "Defaults restored.";
+	}
+
+	private static string GetThemeLabel(AppTheme theme) => theme switch
+	{
+		AppTheme.Light => "Light",
+		AppTheme.Dark => "Dark",
+		_ => "System"
+	};
+
+	private sealed class SettingsFormModel
+	{
+		[Required, StringLength(80)]
+		public string DisplayName { get; set; } = "Shop Admin";
+
+		public AppTheme Theme { get; set; } = AppTheme.System;
+
+		[StringLength(4096)]
+		public string GitHubModelsToken { get; set; } = string.Empty;
+	}
+}

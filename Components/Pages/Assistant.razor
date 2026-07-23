@@ -1,0 +1,206 @@
+@page "/assistant"
+@rendermode InteractiveServer
+@inject AppPreferencesStore Preferences
+@inject InventoryStore Inventory
+@inject AppSessionStore Session
+@inject NavigationManager Navigation
+
+<PageTitle>AI Assistant</PageTitle>
+
+<div class="inventory-page">
+	<div class="hero-panel hero-panel-sm">
+		<div>
+			<p class="section-label text-white-50">GitHub Models AI</p>
+			<h1>Shop assistant</h1>
+			<p class="mb-0">Ask inventory questions, request summaries, and get food shop suggestions.</p>
+		</div>
+		<div class="hero-actions">
+			<a class="btn btn-light" href="settings">Token settings</a>
+		</div>
+	</div>
+
+	@if (!Preferences.HasToken)
+	{
+		<div class="alert alert-warning">
+			Add a GitHub Models token in Settings before using the assistant.
+		</div>
+	}
+
+	<div class="row g-4">
+		<div class="col-lg-5">
+			<section class="card app-card h-100">
+				<div class="card-body">
+					<p class="section-label">Prompt</p>
+					<h2 class="section-title">Ask the assistant</h2>
+
+					<div class="mt-4 mb-3">
+						<label class="form-label">Model</label>
+						<InputText class="form-control" @bind-Value="_model" placeholder="gpt-4o-mini" />
+						<div class="form-text">Use any model available to your GitHub Models token.</div>
+					</div>
+
+					<div class="mb-3">
+						<label class="form-label">Question</label>
+						<InputTextArea class="form-control" rows="7" @bind-Value="_prompt" placeholder="What items are low in stock today?" />
+					</div>
+
+					<div class="d-flex gap-2 flex-wrap">
+						<button class="btn btn-primary" @onclick="SendAsync" disabled="@(IsBusy || !Preferences.HasToken || string.IsNullOrWhiteSpace(_prompt))">
+							@(IsBusy ? "Sending..." : "Send")
+						</button>
+						<button class="btn btn-outline-secondary" @onclick="ClearConversation" type="button">Clear</button>
+					</div>
+
+					@if (!string.IsNullOrWhiteSpace(_error))
+					{
+						<div class="alert alert-danger mt-3 mb-0">@_error</div>
+					}
+				</div>
+			</section>
+		</div>
+
+		<div class="col-lg-7">
+			<section class="card app-card h-100">
+				<div class="card-body d-flex flex-column">
+					<div class="d-flex align-items-start justify-content-between mb-3">
+						<div>
+							<p class="section-label">Conversation</p>
+							<h2 class="section-title">Assistant replies</h2>
+						</div>
+						<span class="badge text-bg-light">@_messages.Count messages</span>
+					</div>
+
+					<div class="chat-thread flex-grow-1">
+						@foreach (var message in _messages)
+						{
+							<div class="chat-bubble @(message.Role == "assistant" ? "chat-bubble-assistant" : "chat-bubble-user")">
+								<div class="small text-uppercase fw-bold mb-1">@message.Role</div>
+								<div>@message.Content</div>
+							</div>
+						}
+					</div>
+				</div>
+			</section>
+		</div>
+	</div>
+</div>
+
+@code {
+	private static readonly HttpClient Client = new();
+	private const string Endpoint = "https://models.github.ai/inference/chat/completions";
+	private readonly List<ChatLine> _messages = new();
+	private string _model = "gpt-4o-mini";
+	private string _prompt = string.Empty;
+	private string? _error;
+	private bool IsBusy;
+
+	protected override void OnInitialized()
+	{
+		if (!Session.IsAuthenticated)
+		{
+			Navigation.NavigateTo("/login", forceLoad: false);
+			return;
+		}
+		_messages.Add(new ChatLine("assistant", "Hello, I can help with stock checks, supplier questions, and shop summaries."));
+	}
+
+	private async Task SendAsync()
+	{
+		if (IsBusy || string.IsNullOrWhiteSpace(_prompt))
+		{
+			return;
+		}
+
+		if (!Preferences.HasToken)
+		{
+			_error = "Add a GitHub Models token in Settings first.";
+			return;
+		}
+
+		var userPrompt = _prompt.Trim();
+		_messages.Add(new ChatLine("user", userPrompt));
+		_prompt = string.Empty;
+		_error = null;
+		IsBusy = true;
+
+		try
+		{
+			var response = await Client.PostAsJsonAsync(Endpoint, BuildRequest(userPrompt));
+			var payload = await response.Content.ReadFromJsonAsync<ChatCompletionResponse>();
+
+			if (!response.IsSuccessStatusCode)
+			{
+				var details = payload?.Error?.Message ?? await response.Content.ReadAsStringAsync();
+				throw new InvalidOperationException(details);
+			}
+
+			var reply = payload?.Choices?.FirstOrDefault()?.Message?.Content?.Trim();
+			if (string.IsNullOrWhiteSpace(reply))
+			{
+				reply = "The model returned an empty response.";
+			}
+
+			_messages.Add(new ChatLine("assistant", reply));
+		}
+		catch (Exception ex)
+		{
+			_error = ex.Message;
+		}
+		finally
+		{
+			IsBusy = false;
+		}
+	}
+
+	private void ClearConversation()
+	{
+		_messages.Clear();
+		_messages.Add(new ChatLine("assistant", "Conversation cleared. Ask me something else about the shop."));
+		_error = null;
+	}
+
+	private ChatCompletionRequest BuildRequest(string userPrompt)
+	{
+		var systemPrompt = $"You are a helpful inventory assistant for a food shop. The current user is {Preferences.DisplayName}. " +
+						   $"Use the provided inventory summary to answer with practical shop-management advice. Inventory summary: {BuildInventorySummary()}";
+
+		var messages = new List<ChatMessage>
+		{
+			new("system", systemPrompt)
+		};
+
+		foreach (var message in _messages.TakeLast(10))
+		{
+			messages.Add(new ChatMessage(message.Role, message.Content));
+		}
+
+		messages.Add(new ChatMessage("user", userPrompt));
+
+		return new ChatCompletionRequest(
+			Model: _model.Trim(),
+			Messages: messages,
+			Temperature: 0.2,
+			MaxTokens: 800);
+	}
+
+	private string BuildInventorySummary()
+	{
+		var dashboard = Inventory.GetDashboard();
+		var lowStock = Inventory.GetProductOverviews().Where(product => product.IsLowStock || product.IsOutOfStock).Take(8);
+		var items = string.Join("; ", lowStock.Select(product => $"{product.Name} ({product.QuantityOnHand} {product.Unit})"));
+
+		return $"{dashboard.ProductCount} products, {dashboard.CategoryCount} categories, {dashboard.SupplierCount} suppliers, {dashboard.LowStockCount} low stock, {dashboard.OutOfStockCount} out of stock. Low items: {items}";
+	}
+
+	private sealed record ChatLine(string Role, string Content);
+
+	private sealed record ChatCompletionRequest(string Model, List<ChatMessage> Messages, double Temperature, int MaxTokens);
+
+	private sealed record ChatMessage(string Role, string Content);
+
+	private sealed record ChatCompletionResponse(ChatChoice[]? Choices, ApiError? Error);
+
+	private sealed record ChatChoice(ChatMessage? Message);
+
+	private sealed record ApiError(string? Message);
+}

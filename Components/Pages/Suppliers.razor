@@ -1,0 +1,264 @@
+@page "/suppliers"
+@rendermode InteractiveServer
+@inject InventoryStore Inventory
+@inject AppSessionStore Session
+@inject NavigationManager Navigation
+
+<PageTitle>Suppliers</PageTitle>
+
+<div class="inventory-page">
+	<div class="hero-panel hero-panel-sm">
+		<div>
+			<p class="section-label text-white-50">Master data</p>
+			<h1>Suppliers &amp; categories</h1>
+			<p class="mb-0">Organize your food shop sources and product groups.</p>
+		</div>
+		<a class="btn btn-light" href="products">Back to products</a>
+	</div>
+
+	@if (!string.IsNullOrWhiteSpace(_message))
+	{
+		<div class="alert alert-info">@_message</div>
+	}
+
+	<div class="row g-4">
+		<div class="col-lg-4">
+			<section class="card app-card h-100">
+				<div class="card-body">
+					<p class="section-label">Category setup</p>
+					<h2 class="section-title">Add category</h2>
+
+					<EditForm Model="_category" OnValidSubmit="AddCategory">
+						<DataAnnotationsValidator />
+						<ValidationSummary />
+
+						<div class="mb-3">
+							<label class="form-label">Category name</label>
+							<InputText class="form-control" @bind-Value="_category.Name" />
+						</div>
+
+						<div class="mb-3">
+							<label class="form-label">Description</label>
+							<InputTextArea class="form-control" rows="4" @bind-Value="_category.Description" />
+						</div>
+
+						<button class="btn btn-primary w-100" type="submit">Save category</button>
+					</EditForm>
+				</div>
+			</section>
+		</div>
+
+		<div class="col-lg-4">
+			<section class="card app-card h-100">
+				<div class="card-body">
+					<p class="section-label">Supplier setup</p>
+					<h2 class="section-title">Add supplier</h2>
+
+					<EditForm Model="_supplier" OnValidSubmit="AddSupplier">
+						<DataAnnotationsValidator />
+						<ValidationSummary />
+
+						<div class="mb-3">
+							<label class="form-label">Supplier name</label>
+							<InputText class="form-control" @bind-Value="_supplier.Name" />
+						</div>
+
+						<div class="mb-3">
+							<label class="form-label">Contact name</label>
+							<InputText class="form-control" @bind-Value="_supplier.ContactName" />
+						</div>
+
+						<div class="mb-3">
+							<label class="form-label">Phone</label>
+							<InputText class="form-control" @bind-Value="_supplier.Phone" />
+						</div>
+
+						<div class="mb-3">
+							<label class="form-label">Email</label>
+							<InputText class="form-control" @bind-Value="_supplier.Email" />
+						</div>
+
+						<button class="btn btn-primary w-100" type="submit">Save supplier</button>
+					</EditForm>
+				</div>
+			</section>
+		</div>
+
+		<div class="col-lg-4">
+			<section class="card app-card h-100">
+				<div class="card-body">
+					<div class="d-flex align-items-center justify-content-between mb-3">
+						<div>
+							<p class="section-label">Overview</p>
+							<h2 class="section-title">Current master data</h2>
+						</div>
+					</div>
+
+					<div class="d-flex flex-column gap-3">
+						<div class="metric-card shadow-none border">
+							<div class="metric-value">@_categories.Count</div>
+							<div class="metric-label">Categories</div>
+						</div>
+						<div class="metric-card shadow-none border">
+							<div class="metric-value">@_suppliers.Count</div>
+							<div class="metric-label">Suppliers</div>
+						</div>
+					</div>
+				</div>
+			</section>
+		</div>
+	</div>
+
+	<div class="row g-4">
+		<div class="col-lg-6">
+			<section class="card app-card">
+				<div class="card-body">
+					<p class="section-label">Categories</p>
+					<h2 class="section-title">Product groups</h2>
+
+					<div class="table-responsive mt-3">
+						<table class="table align-middle">
+							<thead>
+								<tr>
+									<th>Name</th>
+									<th>Description</th>
+									<th class="text-end">Products</th>
+								</tr>
+							</thead>
+							<tbody>
+								@foreach (var category in _categories)
+								{
+									<tr>
+										<td class="fw-semibold">@category.Name</td>
+										<td>@category.Description</td>
+										<td class="text-end">@(_productCounts.TryGetValue(category.Id, out var count) ? count : 0)</td>
+									</tr>
+								}
+							</tbody>
+						</table>
+					</div>
+				</div>
+			</section>
+		</div>
+
+		<div class="col-lg-6">
+			<section class="card app-card">
+				<div class="card-body">
+					<p class="section-label">Suppliers</p>
+					<h2 class="section-title">Vendor list</h2>
+
+					<div class="table-responsive mt-3">
+						<table class="table align-middle">
+							<thead>
+								<tr>
+									<th>Supplier</th>
+									<th>Contact</th>
+									<th>Phone</th>
+									<th>Email</th>
+								</tr>
+							</thead>
+							<tbody>
+								@foreach (var supplier in _suppliers)
+								{
+									<tr>
+										<td class="fw-semibold">@supplier.Name</td>
+										<td>@supplier.ContactName</td>
+										<td>@supplier.Phone</td>
+										<td>@supplier.Email</td>
+									</tr>
+								}
+							</tbody>
+						</table>
+					</div>
+				</div>
+			</section>
+		</div>
+	</div>
+</div>
+
+@code {
+	private readonly List<Category> _categories = new();
+	private readonly List<Supplier> _suppliers = new();
+	private Dictionary<int, int> _productCounts = new();
+	private CategoryFormModel _category = new();
+	private SupplierFormModel _supplier = new();
+	private string? _message;
+
+	protected override void OnInitialized()
+	{
+		if (!Session.IsAuthenticated)
+		{
+			Navigation.NavigateTo("/login", forceLoad: false);
+			return;
+		}
+		ReloadData();
+	}
+
+	private void ReloadData()
+	{
+		_categories.Clear();
+		_categories.AddRange(Inventory.Categories.OrderBy(category => category.Name));
+
+		_suppliers.Clear();
+		_suppliers.AddRange(Inventory.Suppliers.OrderBy(supplier => supplier.Name));
+
+		_productCounts = Inventory.Products
+			.Where(product => product.IsActive)
+			.GroupBy(product => product.CategoryId)
+			.ToDictionary(group => group.Key, group => group.Count());
+	}
+
+	private void AddCategory()
+	{
+		try
+		{
+			Inventory.AddCategory(_category.Name, _category.Description);
+			_category = new CategoryFormModel();
+			_message = "Category saved.";
+			ReloadData();
+		}
+		catch (Exception ex)
+		{
+			_message = ex.Message;
+		}
+	}
+
+	private void AddSupplier()
+	{
+		try
+		{
+			Inventory.AddSupplier(_supplier.Name, _supplier.ContactName, _supplier.Phone, _supplier.Email);
+			_supplier = new SupplierFormModel();
+			_message = "Supplier saved.";
+			ReloadData();
+		}
+		catch (Exception ex)
+		{
+			_message = ex.Message;
+		}
+	}
+
+	private sealed class CategoryFormModel
+	{
+		[Required, StringLength(80)]
+		public string Name { get; set; } = string.Empty;
+
+		[Required, StringLength(200)]
+		public string Description { get; set; } = string.Empty;
+	}
+
+	private sealed class SupplierFormModel
+	{
+		[Required, StringLength(120)]
+		public string Name { get; set; } = string.Empty;
+
+		[Required, StringLength(80)]
+		public string ContactName { get; set; } = string.Empty;
+
+		[Required, StringLength(40)]
+		public string Phone { get; set; } = string.Empty;
+
+		[Required, EmailAddress, StringLength(120)]
+		public string Email { get; set; } = string.Empty;
+	}
+}

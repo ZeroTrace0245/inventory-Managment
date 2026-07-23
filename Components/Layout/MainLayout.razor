@@ -1,0 +1,56 @@
+﻿@inherits LayoutComponentBase
+@inject AppPreferencesStore Preferences
+@implements IDisposable
+
+<div class="page theme-@GetThemeClass()">
+    <div class="sidebar">
+        <NavMenu />
+    </div>
+
+    <main>
+        <div class="top-row px-4">
+            <div>
+                <div class="topbar-label">Food shop inventory</div>
+                <div class="topbar-title">Inventory Management MVP</div>
+            </div>
+            <div class="topbar-actions">
+                <div class="topbar-pill">@Preferences.DisplayName</div>
+                <div class="topbar-pill">Live in-memory data</div>
+            </div>
+        </div>
+
+        <article class="content px-4">
+            @Body
+        </article>
+    </main>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">🗙</span>
+</div>
+
+@code {
+    protected override void OnInitialized()
+    {
+        Preferences.Changed += HandlePreferencesChanged;
+    }
+
+    private void HandlePreferencesChanged()
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private string GetThemeClass() => Preferences.Theme switch
+    {
+        AppTheme.Dark => "dark",
+        AppTheme.Light => "light",
+        _ => "system"
+    };
+
+    public void Dispose()
+    {
+        Preferences.Changed -= HandlePreferencesChanged;
+    }
+}

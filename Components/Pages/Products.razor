@@ -1,0 +1,291 @@
+@page "/products"
+@rendermode InteractiveServer
+@inject InventoryStore Inventory
+@inject AppSessionStore Session
+@inject NavigationManager Navigation
+
+<PageTitle>Products</PageTitle>
+
+<div class="inventory-page">
+	<div class="hero-panel hero-panel-sm">
+		<div>
+			<p class="section-label text-white-50">Catalog management</p>
+			<h1>Products</h1>
+			<p class="mb-0">Add items, set pricing, and keep food stock organized.</p>
+		</div>
+		<a class="btn btn-light" href="stock">Go to stock movement</a>
+	</div>
+
+	@if (!string.IsNullOrWhiteSpace(_message))
+	{
+		<div class="alert alert-success">@_message</div>
+	}
+
+	<div class="row g-4">
+		<div class="col-lg-5">
+			<section class="card app-card h-100">
+				<div class="card-body">
+					<div class="d-flex align-items-start justify-content-between mb-3">
+						<div>
+							<p class="section-label">Add product</p>
+							<h2 class="section-title">New inventory item</h2>
+						</div>
+					</div>
+
+					<EditForm Model="_newProduct" OnValidSubmit="CreateProduct">
+						<DataAnnotationsValidator />
+						<ValidationSummary />
+
+						<div class="mb-3">
+							<label class="form-label">Product name</label>
+							<InputText class="form-control" @bind-Value="_newProduct.Name" />
+						</div>
+
+						<div class="mb-3">
+							<label class="form-label">SKU</label>
+							<InputText class="form-control" @bind-Value="_newProduct.Sku" />
+						</div>
+
+						<div class="row g-3">
+							<div class="col-md-6">
+								<label class="form-label">Category</label>
+								<InputSelect class="form-select" @bind-Value="_newProduct.CategoryId">
+									@foreach (var category in _categories)
+									{
+										<option value="@category.Id">@category.Name</option>
+									}
+								</InputSelect>
+							</div>
+							<div class="col-md-6">
+								<label class="form-label">Supplier</label>
+								<InputSelect class="form-select" @bind-Value="_newProduct.SupplierId">
+									@foreach (var supplier in _suppliers)
+									{
+										<option value="@supplier.Id">@supplier.Name</option>
+									}
+								</InputSelect>
+							</div>
+						</div>
+
+						<div class="row g-3 mt-0">
+							<div class="col-md-4">
+								<label class="form-label">Unit</label>
+								<InputText class="form-control" @bind-Value="_newProduct.Unit" />
+							</div>
+							<div class="col-md-4">
+								<label class="form-label">Cost price</label>
+								<InputNumber class="form-control" @bind-Value="_newProduct.CostPrice" />
+							</div>
+							<div class="col-md-4">
+								<label class="form-label">Sale price</label>
+								<InputNumber class="form-control" @bind-Value="_newProduct.SalePrice" />
+							</div>
+						</div>
+
+						<div class="row g-3 mt-0">
+							<div class="col-md-4">
+								<label class="form-label">Opening stock</label>
+								<InputNumber class="form-control" @bind-Value="_newProduct.QuantityOnHand" />
+							</div>
+							<div class="col-md-4">
+								<label class="form-label">Reorder level</label>
+								<InputNumber class="form-control" @bind-Value="_newProduct.ReorderLevel" />
+							</div>
+							<div class="col-md-4">
+								<label class="form-label">Expiry date</label>
+								<InputDate TValue="DateOnly?" class="form-control" @bind-Value="_newProduct.ExpiryDate" />
+							</div>
+						</div>
+
+						<button class="btn btn-primary w-100 mt-4" type="submit">Save product</button>
+					</EditForm>
+				</div>
+			</section>
+		</div>
+
+		<div class="col-lg-7">
+			<section class="card app-card h-100">
+				<div class="card-body">
+					<div class="d-flex align-items-start justify-content-between mb-3">
+						<div>
+							<p class="section-label">Active catalog</p>
+							<h2 class="section-title">Current products</h2>
+						</div>
+						<span class="badge text-bg-light">@_products.Count products</span>
+					</div>
+
+					<div class="table-responsive">
+						<table class="table align-middle">
+							<thead>
+								<tr>
+									<th>Product</th>
+									<th>Category</th>
+									<th>Supplier</th>
+									<th class="text-end">Stock</th>
+									<th class="text-end">Price</th>
+									<th>Status</th>
+									<th></th>
+								</tr>
+							</thead>
+							<tbody>
+								@foreach (var product in _products)
+								{
+									<tr>
+										<td>
+											<div class="fw-semibold">@product.Name</div>
+											<div class="small text-muted">@product.Sku</div>
+										</td>
+										<td>@product.Category</td>
+										<td>@product.Supplier</td>
+										<td class="text-end">
+											<div class="fw-semibold">@product.QuantityOnHand @product.Unit</div>
+											<div class="small text-muted">Reorder @product.ReorderLevel</div>
+										</td>
+										<td class="text-end">
+											<div>Cost @product.CostPrice.ToString("C")</div>
+											<div class="small text-muted">Sell @product.SalePrice.ToString("C")</div>
+										</td>
+										<td>
+											@if (product.IsOutOfStock)
+											{
+												<span class="status-pill status-danger">Out of stock</span>
+											}
+											else if (product.IsLowStock)
+											{
+												<span class="status-pill status-warn">Low stock</span>
+											}
+											else
+											{
+												<span class="status-pill status-ok">Healthy</span>
+											}
+										</td>
+										<td class="text-end">
+											<button class="btn btn-sm btn-outline-danger" @onclick="() => DeactivateProduct(product.Id)">Deactivate</button>
+										</td>
+									</tr>
+								}
+							</tbody>
+						</table>
+					</div>
+				</div>
+			</section>
+		</div>
+	</div>
+</div>
+
+@code {
+	private readonly List<Category> _categories = new();
+	private readonly List<Supplier> _suppliers = new();
+	private List<ProductOverview> _products = new();
+	private ProductFormModel _newProduct = new();
+	private string? _message;
+
+	protected override void OnInitialized()
+	{
+		if (!Session.IsAuthenticated)
+		{
+			Navigation.NavigateTo("/login", forceLoad: false);
+			return;
+		}
+		ReloadData();
+	}
+
+	private void ReloadData()
+	{
+		_categories.Clear();
+		_categories.AddRange(Inventory.Categories.OrderBy(category => category.Name));
+
+		_suppliers.Clear();
+		_suppliers.AddRange(Inventory.Suppliers.OrderBy(supplier => supplier.Name));
+
+		_products = Inventory.GetProductOverviews().ToList();
+
+		if (_newProduct.CategoryId == 0 && _categories.Count > 0)
+		{
+			_newProduct.CategoryId = _categories[0].Id;
+		}
+
+		if (_newProduct.SupplierId == 0 && _suppliers.Count > 0)
+		{
+			_newProduct.SupplierId = _suppliers[0].Id;
+		}
+
+		if (string.IsNullOrWhiteSpace(_newProduct.Unit))
+		{
+			_newProduct.Unit = "unit";
+		}
+	}
+
+	private void CreateProduct()
+	{
+		try
+		{
+			Inventory.AddProduct(new ProductDraft(
+				_newProduct.Name,
+				_newProduct.Sku,
+				_newProduct.CategoryId,
+				_newProduct.SupplierId,
+				_newProduct.Unit,
+				_newProduct.CostPrice,
+				_newProduct.SalePrice,
+				_newProduct.QuantityOnHand,
+				_newProduct.ReorderLevel,
+				_newProduct.ExpiryDate));
+
+			_message = $"Added {_newProduct.Name.Trim()} to the catalog.";
+			_newProduct = CreateDefaultProductForm();
+			ReloadData();
+		}
+		catch (Exception ex)
+		{
+			_message = ex.Message;
+		}
+	}
+
+	private void DeactivateProduct(int productId)
+	{
+		Inventory.RemoveProduct(productId);
+		_message = "Product deactivated.";
+		ReloadData();
+	}
+
+	private ProductFormModel CreateDefaultProductForm() => new()
+	{
+		Unit = "unit",
+		ExpiryDate = DateOnly.FromDateTime(DateTime.Today.AddDays(7)),
+		CategoryId = _categories.FirstOrDefault()?.Id ?? 0,
+		SupplierId = _suppliers.FirstOrDefault()?.Id ?? 0
+	};
+
+	private sealed class ProductFormModel
+	{
+		[Required, StringLength(80)]
+		public string Name { get; set; } = string.Empty;
+
+		[Required, StringLength(40)]
+		public string Sku { get; set; } = string.Empty;
+
+		[Range(1, int.MaxValue, ErrorMessage = "Choose a category.")]
+		public int CategoryId { get; set; }
+
+		[Range(1, int.MaxValue, ErrorMessage = "Choose a supplier.")]
+		public int SupplierId { get; set; }
+
+		[Required, StringLength(20)]
+		public string Unit { get; set; } = "unit";
+
+		[Range(0, 999999)]
+		public decimal CostPrice { get; set; }
+
+		[Range(0, 999999)]
+		public decimal SalePrice { get; set; }
+
+		[Range(0, 999999)]
+		public int QuantityOnHand { get; set; }
+
+		[Range(0, 999999)]
+		public int ReorderLevel { get; set; }
+
+		public DateOnly? ExpiryDate { get; set; } = DateOnly.FromDateTime(DateTime.Today.AddDays(7));
+	}
+}

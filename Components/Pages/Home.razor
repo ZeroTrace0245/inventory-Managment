@@ -1,0 +1,209 @@
+﻿@page "/"
+@rendermode InteractiveServer
+@inject InventoryStore Inventory
+@inject AppSessionStore Session
+@inject NavigationManager Navigation
+
+<PageTitle>Dashboard</PageTitle>
+
+<div class="inventory-dashboard">
+    <div class="hero-panel">
+        <div>
+            @if (Session.IsAuthenticated)
+            {
+                <p class="section-label text-white-50">Welcome back</p>
+                <h1>Hello, @Session.DisplayName!</h1>
+                <p class="mb-0">Track stock, suppliers, and low inventory in one place.</p>
+            }
+            else
+            {
+                <p class="section-label text-white-50">Food shop inventory</p>
+                <h1>Inventory dashboard</h1>
+                <p class="mb-0">Track stock, suppliers, and low inventory in one place.</p>
+            }
+        </div>
+        <div class="hero-actions">
+            <a class="btn btn-light" href="products">Manage products</a>
+            <a class="btn btn-outline-light" href="stock">Update stock</a>
+            @if (Session.IsAuthenticated)
+            {
+                <button class="btn btn-outline-light" @onclick="SignOut">Sign out</button>
+            }
+            else
+            {
+                <a class="btn btn-outline-light" href="/login">Sign in</a>
+            }
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-md-3">
+            <div class="metric-card">
+                <div class="metric-value">@_dashboard.ProductCount</div>
+                <div class="metric-label">Products</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="metric-card">
+                <div class="metric-value">@_dashboard.CategoryCount</div>
+                <div class="metric-label">Categories</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="metric-card">
+                <div class="metric-value">@_dashboard.SupplierCount</div>
+                <div class="metric-label">Suppliers</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="metric-card">
+                <div class="metric-value">@_dashboard.LowStockCount</div>
+                <div class="metric-label">Low stock alerts</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-lg-7">
+            <section class="card app-card h-100">
+                <div class="card-body">
+                    <div class="d-flex align-items-start justify-content-between mb-3">
+                        <div>
+                            <p class="section-label">Low stock alerts</p>
+                            <h2 class="section-title">Attention needed</h2>
+                        </div>
+                        <span class="badge text-bg-danger">@_alertProducts.Count items</span>
+                    </div>
+
+                    @if (_alertProducts.Count == 0)
+                    {
+                        <div class="alert alert-success mb-0">All active products are above reorder levels.</div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table align-middle mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Product</th>
+                                        <th>Stock</th>
+                                        <th>Status</th>
+                                        <th>Expiry</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var product in _alertProducts)
+                                    {
+                                        <tr>
+                                            <td>
+                                                <div class="fw-semibold">@product.Name</div>
+                                                <div class="small text-muted">@product.Category</div>
+                                            </td>
+                                            <td>@product.QuantityOnHand @product.Unit</td>
+                                            <td>
+                                                @if (product.IsOutOfStock)
+                                                {
+                                                    <span class="status-pill status-danger">Out of stock</span>
+                                                }
+                                                else if (product.IsLowStock)
+                                                {
+                                                    <span class="status-pill status-warn">Low stock</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="status-pill status-ok">Expiring soon</span>
+                                                }
+                                            </td>
+                                            <td>@(product.ExpiryDate?.ToString("d") ?? "-")</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            </section>
+        </div>
+
+        <div class="col-lg-5">
+            <section class="card app-card h-100">
+                <div class="card-body">
+                    <div class="d-flex align-items-start justify-content-between mb-3">
+                        <div>
+                            <p class="section-label">Recent activity</p>
+                            <h2 class="section-title">Stock movements</h2>
+                        </div>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="table align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Product</th>
+                                    <th class="text-end">Change</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var movement in _movements)
+                                {
+                                    <tr>
+                                        <td class="small text-muted">@movement.OccurredAt.LocalDateTime.ToString("g")</td>
+                                        <td>
+                                            <div class="fw-semibold">@movement.ProductName</div>
+                                            <div class="small text-muted">@movement.Reason</div>
+                                        </td>
+                                        <td class="text-end">
+                                            <span class="movement-@((movement.QuantityChange >= 0) ? "positive" : "negative")">@movement.QuantityChange</span>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+</div>
+
+@code {
+    private InventoryDashboard _dashboard = new(0, 0, 0, 0, 0, 0, 0);
+    private List<ProductOverview> _alertProducts = new();
+    private List<StockMovementDetail> _movements = new();
+
+    protected override void OnInitialized()
+    {
+        if (!Session.IsAuthenticated)
+        {
+            Navigation.NavigateTo("/login", forceLoad: false);
+            return;
+        }
+        ReloadData();
+    }
+
+    private void SignOut()
+    {
+        Session.SignOut();
+        Navigation.NavigateTo("/login", forceLoad: false);
+    }
+
+    private void ReloadData()
+    {
+        _dashboard = Inventory.GetDashboard();
+        var products = Inventory.GetProductOverviews().ToList();
+        _alertProducts = products.Where(product => product.IsOutOfStock || product.IsLowStock || IsExpiringSoon(product)).ToList();
+        _movements = Inventory.GetRecentMovementDetails(8).ToList();
+    }
+
+    private static bool IsExpiringSoon(ProductOverview product)
+    {
+        if (!product.ExpiryDate.HasValue)
+        {
+            return false;
+        }
+
+        var limit = DateOnly.FromDateTime(DateTime.Today.AddDays(5));
+        return product.ExpiryDate.Value <= limit;
+    }
+}

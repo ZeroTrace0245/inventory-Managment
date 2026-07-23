@@ -1,0 +1,76 @@
+@page "/login"
+@rendermode InteractiveServer
+@inject AppSessionStore Session
+@inject NavigationManager Navigation
+
+<PageTitle>Login</PageTitle>
+
+<div class="container d-flex align-items-center justify-content-center min-vh-100">
+	<div class="col-md-6 col-lg-4">
+		<div class="card shadow">
+			<div class="card-body p-5">
+				<h1 class="h3 text-center mb-4">Inventory Management</h1>
+				<p class="text-center text-muted mb-4">Select your user role to login</p>
+
+				<div class="d-grid gap-3">
+					<button class="btn btn-primary btn-lg" @onclick="@(async () => await SignInAsync("manager"))">
+						<span class="fw-bold">Manager</span>
+						<br />
+						<small>Full access to inventory, settings, and reporting</small>
+					</button>
+					<button class="btn btn-primary btn-lg" @onclick="@(async () => await SignInAsync("suppliers"))">
+						<span class="fw-bold">Suppliers</span>
+						<br />
+						<small>Handles vendor coordination and receiving</small>
+					</button>
+					<button class="btn btn-primary btn-lg" @onclick="@(async () => await SignInAsync("stock-clerks"))">
+						<span class="fw-bold">Stock Clerks / Inventory Staff</span>
+						<br />
+						<small>Updates stock counts, movements, and day-to-day tasks</small>
+					</button>
+				</div>
+
+				@if (!string.IsNullOrWhiteSpace(_error))
+				{
+					<div class="alert alert-danger mt-3 mb-0">@_error</div>
+				}
+			</div>
+		</div>
+	</div>
+</div>
+
+@code {
+	private string? _error;
+
+	private async Task SignInAsync(string userId)
+	{
+		try
+		{
+			Session.SignIn(userId);
+			Navigation.NavigateTo("/", forceLoad: false);
+		}
+		catch (InvalidOperationException ex)
+		{
+			_error = ex.Message;
+		}
+	}
+}
+
+<style>
+	:global(.min-vh-100) {
+		min-height: 100vh;
+	}
+
+	.btn-lg {
+		padding: 1.5rem;
+		text-align: left;
+		border-radius: 0.5rem;
+	}
+
+	.btn-lg small {
+		display: block;
+		margin-top: 0.25rem;
+		font-weight: 400;
+		opacity: 0.9;
+	}
+</style>

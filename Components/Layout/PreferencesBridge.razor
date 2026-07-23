@@ -1,0 +1,43 @@
+@inject AppPreferencesStore Preferences
+@inject AppPreferencesStorage Storage
+@implements IDisposable
+
+@code {
+	private bool _loaded;
+
+	protected override async Task OnAfterRenderAsync(bool firstRender)
+	{
+		if (!firstRender)
+		{
+			return;
+		}
+
+		var snapshot = await Storage.LoadAsync();
+		if (snapshot is not null)
+		{
+			Preferences.SetPreferences(new AppPreferences(snapshot.DisplayName, snapshot.Theme, snapshot.GitHubModelsToken));
+		}
+
+		Preferences.Changed += HandlePreferencesChanged;
+		_loaded = true;
+	}
+
+	private void HandlePreferencesChanged()
+	{
+		if (!_loaded)
+		{
+			return;
+		}
+
+		_ = InvokeAsync(async () =>
+		{
+			var current = Preferences.Current;
+			await Storage.SaveAsync(new AppPreferencesSnapshot(current.DisplayName, current.Theme, current.GitHubModelsToken));
+		});
+	}
+
+	public void Dispose()
+	{
+		Preferences.Changed -= HandlePreferencesChanged;
+	}
+}
