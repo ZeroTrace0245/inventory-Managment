@@ -23,6 +23,16 @@ public sealed class AppSessionStorage
                 return null;
             }
 
+            // Quick guard: ensure the stored value looks like JSON before deserializing
+            var trimmed = json.TrimStart();
+            if (trimmed.Length == 0 || (trimmed[0] != '{' && trimmed[0] != '['))
+            {
+                // Stored value is not JSON. Return a best-effort snapshot containing the raw value
+                // so the app can continue and the UI can show the stored string for debugging.
+                var raw = json.Trim();
+                return new AppSessionSnapshot(raw);
+            }
+
             return JsonSerializer.Deserialize<AppSessionSnapshot>(json, JsonOptions);
         }
         catch (JsonException)

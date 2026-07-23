@@ -23,6 +23,16 @@ public sealed class AppPreferencesStorage
                 return null;
             }
 
+            // Quick guard: ensure the stored value looks like JSON before deserializing
+            var trimmed = json.TrimStart();
+            if (trimmed.Length == 0 || (trimmed[0] != '{' && trimmed[0] != '['))
+            {
+                // Stored value is not JSON. Return a best-effort snapshot containing the raw value
+                // so the UI can display it for debugging instead of failing.
+                var raw = json.Trim();
+                return new AppPreferencesSnapshot(raw, AppTheme.System, string.Empty);
+            }
+
             return JsonSerializer.Deserialize<AppPreferencesSnapshot>(json, JsonOptions);
         }
         catch (JsonException)
